@@ -1,0 +1,11 @@
+include: package:pedantic_mono/analysis_options.yaml
+
+
+
+analyzer:
+  errors:
+    omit_local_variable_types: ignore
+    sort_pub_dependencies: ignore
+  exclude:
+    - "**/*.g.dart"
+    - "**/*.freezed.dart"
