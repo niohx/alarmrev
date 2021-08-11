@@ -6,25 +6,28 @@ import 'package:uuid/uuid.dart';
 import 'package:android_alarm_manager/android_alarm_manager.dart';
 import 'package:alarmrev/alarm_functions.dart';
 import '../model/alarm.dart';
+import 'intent_provider.dart';
 
 var _uuid = const Uuid();
 
 abstract class AlarmProviderModel {
   Future<void> createAlarm(Alarm alarm);
-  Future<void> toggleAlarm(Alarm alarm);
+  Future<void> toggleAlarm({required Alarm target, required bool status});
   Future<void> deleteAlarm(Alarm alarm);
-  Future<void> resetAlarm(Alarm alarm);
+  Future<void> resetAllAlarmAtSpecificTime({required DateTime resetTime});
   Future<int> retreiveAlarmId();
 }
 
 class AlarmProvider extends StateNotifier<List<Alarm>>
     implements AlarmProviderModel {
-  AlarmProvider() : super([]) {
+  AlarmProvider({required this.intent}) : super([]) {
     _initialize();
   }
+  IntentProvider intent;
   Future<void> _initialize() async {
-    // SharedPreferences prefs = await SharedPreferences.getInstance();
-    // await prefs.clear();
+    if (intent.fireId == 0) {
+      await clearState();
+    }
     state = await loadState();
   }
 
@@ -39,6 +42,22 @@ class AlarmProvider extends StateNotifier<List<Alarm>>
           .toList();
     }
     return [];
+  }
+
+  Future<void> clearState() async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    if (prefs.containsKey('ActiveAlarms')) {
+      List<int> activeIds = [];
+      activeIds = prefs
+          .getStringList('ActiveAlarms')!
+          .map((element) => int.parse(element))
+          .toList();
+      activeIds.forEach((activeId) async {
+        await AndroidAlarmManager.cancel(activeId);
+      });
+    }
+    await prefs.clear();
+    state = [];
   }
 
   static Future<void> saveState(List<Alarm> state) async {
@@ -61,28 +80,76 @@ class AlarmProvider extends StateNotifier<List<Alarm>>
 
   static Future<void> saveActiveAlarmIds(int id) async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
+    print('save active id called');
+    List<int> ids = [];
     if (prefs.containsKey('ActiveAlarms')) {
-      List<int?> ids = prefs
+      final List<int> ids = prefs
           .getStringList('ActiveAlarms')!
           .map((element) => int.parse(element))
           .toList();
-      ids = [...ids, id];
-      await prefs.setStringList(
-          'ActiveAlarms', ids.map((element) => element.toString()).toList());
     }
+    ids = [...ids, id];
+    print(ids);
+    await prefs.setStringList(
+        'ActiveAlarms', ids.map((element) => element.toString()).toList());
   }
 
   static Future<void> removeActiveAlarmIds(int id) async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
+    //print('remove action called');
+    List<int?> ids = [];
     if (prefs.containsKey('ActiveAlarms')) {
-      List<int?> ids = prefs
+      ids = prefs
           .getStringList('ActiveAlarms')!
           .map((element) => int.parse(element))
           .toList();
-      ids.remove(id);
-      await prefs.setStringList(
-          'ActiveAlarms', ids.map((element) => element.toString()).toList());
     }
+    ids.remove(id);
+    print(ids);
+    await prefs.setStringList(
+        'ActiveAlarms', ids.map((element) => element.toString()).toList());
+  }
+
+  // static Future<void> resetAlarmFromBackGround() async {
+  //   final SharedPreferences prefs = await SharedPreferences.getInstance();
+  //   List<int> _activeAlarms = [];
+  //   if (prefs.containsKey('ActiveAlarms')) {
+  //     _activeAlarms = prefs
+  //         .getStringList('ActiveAlarms')!
+  //         .map((element) => int.parse(element))
+  //         .toList();
+
+  //     _activeAlarms.forEach((int id) => AndroidAlarmManager.cancel(id));
+  //     await prefs.setStringList('ActiveAlarms', []);
+  //   } else {
+  //     print('no alarms found');
+  //   }
+  // }
+
+  // Future<void> resetAlarmFromForeGround() async {
+  //   final SharedPreferences prefs = await SharedPreferences.getInstance();
+  //   List<int> _activeAlarms = [];
+  //   if (prefs.containsKey('ActiveAlarms')) {
+  //     _activeAlarms = prefs
+  //         .getStringList('ActiveAlarms')!
+  //         .map((element) => int.parse(element))
+  //         .toList();
+  //     _activeAlarms.forEach((int id) => AndroidAlarmManager.cancel(id));
+  //     await prefs.setStringList('ActiveAlarms', []);
+  //     state = [];
+  //   } else {
+  //     print('no alarms found');
+  //   }
+  // }
+  @override
+  Future<void> resetAllAlarmAtSpecificTime(
+      {required DateTime resetTime}) async {
+    if (resetTime.isBefore(DateTime.now())) {
+      resetTime = resetTime.add(const Duration(days: 1));
+    }
+    await AndroidAlarmManager.periodic(
+        const Duration(days: 1), 0, AlarmFunc.invokeAlarmApp,
+        startAt: resetTime);
   }
 
   @override
@@ -90,6 +157,7 @@ class AlarmProvider extends StateNotifier<List<Alarm>>
     print('creating alarms...');
     final String _uid = _uuid.v4();
 
+    // ignore: parameter_assignments
     alarm = alarm.copyWith(uid: _uid);
 
     state = [...state, alarm];
@@ -101,11 +169,12 @@ class AlarmProvider extends StateNotifier<List<Alarm>>
   }
 
   @override
-  Future<void> toggleAlarm(Alarm target) async {
-    print(state);
+  Future<void> toggleAlarm(
+      {required Alarm target, required bool status}) async {
+    print(status);
     state = state.map((alarm) {
       if (target.uid == alarm.uid) {
-        return target.copyWith(isOn: !target.isOn);
+        return target.copyWith(isOn: status);
       } else {
         return alarm;
       }
@@ -126,15 +195,14 @@ class AlarmProvider extends StateNotifier<List<Alarm>>
   @override
   Future<void> deleteAlarm(Alarm target) async {
     state = state.where((element) => element.uid != target.uid).toList();
+    await AndroidAlarmManager.cancel(target.id);
     await saveState(state);
   }
 
   @override
-  Future<void> resetAlarm(Alarm alarm) async {}
-  @override
   Future<int> retreiveAlarmId() async {
     int maxNum;
-    SharedPreferences _prefs = await SharedPreferences.getInstance();
+    final SharedPreferences _prefs = await SharedPreferences.getInstance();
     if (_prefs.containsKey('maxNum')) {
       maxNum = _prefs.getInt('maxNum')! + 1;
       await _prefs.setInt('maxNum', maxNum);

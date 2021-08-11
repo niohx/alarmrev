@@ -6,6 +6,8 @@ analyzer:
   errors:
     omit_local_variable_types: ignore
     sort_pub_dependencies: ignore
+    avoid_function_literals_in_foreach_calls: ignore
+    parameter_assignments: ignore
   exclude:
     - "**/*.g.dart"
     - "**/*.freezed.dart"

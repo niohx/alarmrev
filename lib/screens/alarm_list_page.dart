@@ -13,6 +13,14 @@ class AlarmListPage extends HookWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Alarm Page'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.delete),
+            onPressed: () {
+              _showResetTime(context: context);
+            },
+          )
+        ],
       ),
       body: _AlarmListPageBody(),
       floatingActionButton: FloatingActionButton(
@@ -23,6 +31,23 @@ class AlarmListPage extends HookWidget {
         child: const Icon(Icons.add),
       ),
     );
+  }
+
+  Future<void> _showResetTime({required BuildContext context}) async {
+    final TimeOfDay? _selectedTime =
+        await showTimePicker(context: context, initialTime: TimeOfDay.now());
+    final DateTime _now = DateTime.now();
+    DateTime? _selectedDateTime;
+    if (_selectedTime != null) {
+      _selectedDateTime = DateTime(_now.year, _now.month, _now.day,
+          _selectedTime.hour, _selectedTime.minute);
+      if (_now.isAfter(_selectedDateTime)) {
+        _selectedDateTime = _selectedDateTime.add(const Duration(days: 1));
+      }
+      await context
+          .read(alarmProvider.notifier)
+          .resetAllAlarmAtSpecificTime(resetTime: _selectedDateTime);
+    }
   }
 
   Future<void> _selectTimeAndSetAlarm({required BuildContext context}) async {
@@ -70,7 +95,7 @@ class _AlarmListPageBody extends HookWidget {
               onChanged: (value) {
                 context
                     .read(alarmProvider.notifier)
-                    .toggleAlarm(_alarms[index]);
+                    .toggleAlarm(target: _alarms[index], status: value);
               },
             ),
           );
